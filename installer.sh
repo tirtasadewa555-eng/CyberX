@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # ==============================================================================
-# CYBER-X GATEWAY - AUTO DEPLOYMENT SCRIPT (ANTI-ERROR EDITION v2)
+# CYBER-X GATEWAY - AUTO DEPLOYMENT SCRIPT (SMART-DETECT EDITION)
 # Created by: Tirta Sadewa | Cyber Security Expert
 # Team: Cyber Sentinel Secure Team
 # ==============================================================================
@@ -74,22 +74,32 @@ if [ ! -d "$APP_DIR" ]; then
     exit 1
 fi
 
+# 6. SMART DIRECTORY LOCATOR & NPM INSTALL
+echo -e "\n${YELLOW}[5/9] Mendeteksi Struktur Direktori & Clean Install NPM...${NC}"
 cd "$APP_DIR" || exit
 
-# 6. INSTALASI MODUL NODE.JS (CLEAN INSTALL)
-echo -e "\n${YELLOW}[5/9] Membersihkan Cache & Menginstal Node Modules (Clean Install)...${NC}"
-
-if [ -d "node_modules" ]; then
-    echo -e "${CYAN}Mendeteksi node_modules lama. Menghapus...${NC}"
-    rm -rf node_modules
+# Cek di mana letak package.json sebenarnya
+if [ -f "backend/package.json" ]; then
+    echo -e "${CYAN}Target terdeteksi di folder /backend${NC}"
+    cd backend || exit
+elif [ -f "src/package.json" ]; then
+    echo -e "${CYAN}Target terdeteksi di folder /src${NC}"
+    cd src || exit
+elif [ -f "package.json" ]; then
+    echo -e "${CYAN}Target terdeteksi di direktori utama (root repo)${NC}"
+else
+    echo -e "${RED}[!] package.json tidak ditemukan! Gagal melakukan instalasi modul.${NC}"
 fi
 
+# Clean install modules
+if [ -d "node_modules" ]; then
+    rm -rf node_modules
+fi
 if [ -f "package-lock.json" ]; then
-    echo -e "${CYAN}Mendeteksi package-lock.json lama. Menghapus...${NC}"
     rm -f package-lock.json
 fi
 
-echo -e "${GREEN}Menjalankan instalasi NPM bersih...${NC}"
+echo -e "${GREEN}Menjalankan npm install...${NC}"
 npm install
 
 # 7. SETUP FIREBASE SERVICE ACCOUNT
@@ -109,7 +119,7 @@ cat <<EOF > firebase-service-account.json
   "universe_domain": "googleapis.com"
 }
 EOF
-echo -e "${GREEN}File firebase-service-account.json berhasil dibuat!${NC}"
+echo -e "${GREEN}File firebase-service-account.json berhasil dibuat di $(pwd)!${NC}"
 
 # 8. SETUP FILE .ENV
 if [ ! -f ".env" ]; then
@@ -121,15 +131,13 @@ SERVER_IP=127.0.0.1
 PROTECTED_DIR=/var/www/html
 BACKUP_DIR=/root/backup_vault
 EOF
-    echo -e "${GREEN}File .env berhasil dibuat.${NC}"
+    echo -e "${GREEN}File .env berhasil dibuat di $(pwd).${NC}"
 else
     echo -e "\n${GREEN}[7/9] File .env sudah ada.${NC}"
 fi
 
-# 9. PEMBERSIHAN PM2 & PORT (ANTI-ERROR LOGIC)
+# 9. PEMBERSIHAN PM2 & PORT
 echo -e "\n${YELLOW}[8/9] Membersihkan Port & Proses PM2 yang bentrok...${NC}"
-
-# Mematikan proses apa pun yang memakai port yang sama
 if lsof -Pi :$APP_PORT -sTCP:LISTEN -t >/dev/null ; then
     echo -e "${RED}[!] Port $APP_PORT sedang digunakan. Melakukan Kill Process...${NC}"
     kill -9 $(lsof -t -i:$APP_PORT) 2>/dev/null || true
@@ -139,32 +147,25 @@ else
     echo -e "${GREEN}Port $APP_PORT dalam keadaan bersih.${NC}"
 fi
 
-# Menghapus profil PM2 dengan nama yang sama jika ada
 if pm2 describe "$APP_NAME" > /dev/null 2>&1; then
     echo -e "${RED}[!] Menemukan proses PM2 lama bernama '$APP_NAME'. Menghapus profil lama...${NC}"
     pm2 delete "$APP_NAME"
     sleep 2
 fi
 
-# 10. MENJALANKAN BACKEND DENGAN PM2 (AUTO-DETECT)
-echo -e "\n${YELLOW}[9/9] Mendeteksi Entry Point & Menjalankan Gateway PM2...${NC}"
+# 10. MENJALANKAN BACKEND DENGAN PM2
+echo -e "\n${YELLOW}[9/9] Menjalankan Gateway PM2...${NC}"
 
-# Cari file index.js di mana pun dia berada
-if [ -f "src/index.js" ]; then
-    echo -e "${CYAN}File utama ditemukan di src/index.js${NC}"
-    pm2 start src/index.js --name "$APP_NAME" --update-env
-elif [ -f "backend/index.js" ]; then
-    echo -e "${CYAN}File utama ditemukan di backend/index.js${NC}"
-    pm2 start backend/index.js --name "$APP_NAME" --update-env
-elif [ -f "index.js" ]; then
-    echo -e "${CYAN}File utama ditemukan di root direktori (index.js)${NC}"
+# Karena script sudah 'cd' ke folder yang benar, tinggal cari index.js
+if [ -f "index.js" ]; then
     pm2 start index.js --name "$APP_NAME" --update-env
+elif [ -f "src/index.js" ]; then
+    pm2 start src/index.js --name "$APP_NAME" --update-env
 else
-    echo -e "${RED}[!] ERROR FATAL: File index.js tidak ditemukan di dalam repositori! PM2 dibatalkan.${NC}"
+    echo -e "${RED}[!] ERROR FATAL: File index.js tidak ditemukan! PM2 dibatalkan.${NC}"
     exit 1
 fi
 
-# Simpan konfigurasi PM2 agar auto-start saat reboot
 pm2 save
 pm2 startup | grep "sudo env PATH" | bash
 
@@ -174,11 +175,11 @@ echo -e "==========================================================="
 echo -e "🛡️  System developed by: ${CYAN}Tirta Sadewa${NC}"
 echo -e "🚀 Status PM2         : ${CYAN}pm2 status${NC}"
 echo -e "📋 Log Real-time      : ${CYAN}pm2 logs $APP_NAME${NC}"
-echo -e "⚙️  Direktori         : ${CYAN}$APP_DIR${NC}"
+echo -e "⚙️  Working Dir       : ${CYAN}$(pwd)${NC}"
 echo -e "==========================================================="
 echo -e "${YELLOW}TINDAKAN WAJIB SETELAH INI:${NC}"
-echo -e "1. Edit kredensial Firebase : ${CYAN}nano $APP_DIR/firebase-service-account.json${NC}"
-echo -e "2. Edit pengaturan .env     : ${CYAN}nano $APP_DIR/.env${NC}"
+echo -e "1. Edit kredensial Firebase : ${CYAN}nano $(pwd)/firebase-service-account.json${NC}"
+echo -e "2. Edit pengaturan .env     : ${CYAN}nano $(pwd)/.env${NC}"
 echo -e "3. Terapkan perubahan       : ${CYAN}pm2 restart $APP_NAME${NC}"
 echo -e "==========================================================="
 echo -e "${YELLOW}Cyber Sentinel Secure Team © 2026${NC}"
