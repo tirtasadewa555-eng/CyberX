@@ -9,7 +9,7 @@
 # --- KONFIGURASI PENGGUNA (EDIT BAGIAN INI) ---
 GITHUB_REPO="https://github.com/tirtasadewa555-eng/CyberX" # Ganti dengan URL Repo Anda
 APP_DIR="/root/CyberX"
-APP_NAME="wa-gateway"
+APP_NAME="cyberX"
 NODE_VERSION="20"
 # ---------------------------------------------
 
