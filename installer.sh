@@ -1,15 +1,16 @@
 #!/bin/bash
 
 # ==============================================================================
-# CYBER-X GATEWAY - AUTO DEPLOYMENT SCRIPT
+# CYBER-X GATEWAY - AUTO DEPLOYMENT SCRIPT (ANTI-ERROR EDITION)
 # Created by: Tirta Sadewa | Cyber Security Expert
-# Team: Cyber Sentinel Secure
+# Team: Cyber Sentinel Secure Team
 # ==============================================================================
 
 # --- KONFIGURASI PENGGUNA (EDIT BAGIAN INI) ---
-GITHUB_REPO="https://github.com/tirtasadewa555-eng/CyberX" # Ganti dengan URL Repo Anda
-APP_DIR="/root/CyberX"
-APP_NAME="cyberX"
+GITHUB_REPO="https://github.com/tirtasadewa555-eng/CyberX.git" 
+APP_NAME="CyberX"
+# PERBAIKAN KRUSIAL: Jangan gunakan "/root/", gunakan nama spesifik untuk folder aplikasi
+APP_DIR="/root/$APP_NAME" 
 NODE_VERSION="20"
 # ---------------------------------------------
 
@@ -35,17 +36,16 @@ if [ "$EUID" -ne 0 ]; then
 fi
 
 # 2. UPDATE & UPGRADE OS
-echo -e "\n${YELLOW}[1/7] Memperbarui sistem Ubuntu & Daftar Paket...${NC}"
+echo -e "\n${YELLOW}[1/8] Memperbarui sistem Ubuntu & Daftar Paket...${NC}"
 apt-get update && apt-get upgrade -y
 
-# 3. INSTALASI DEPENDENSI SISTEM & PUPPETEER (WHATSAPP WEB)
-echo -e "\n${YELLOW}[2/7] Menginstal Dependensi Sistem, Keamanan & Puppeteer...${NC}"
-# Menginstal paket psmisc untuk fuser, lsof untuk port check, dan lib pendukung browser
+# 3. INSTALASI DEPENDENSI SISTEM & PUPPETEER
+echo -e "\n${YELLOW}[2/8] Menginstal Dependensi Sistem, Keamanan & Puppeteer...${NC}"
 apt-get install -y curl git unzip build-essential psmisc lsof ufw nmap clamav
 apt-get install -y libnss3 libxss1 libasound2 libatk-bridge2.0-0 libgtk-3-0 libgbm1 libnss3-dev libgdk-pixbuf2.0-0 libffi-dev libappindicator3-1 fonts-liberation xdg-utils
 
 # 4. INSTALASI NODE.JS & PM2
-echo -e "\n${YELLOW}[3/7] Menginstal Node.js v${NODE_VERSION} & PM2...${NC}"
+echo -e "\n${YELLOW}[3/8] Menginstal Node.js v${NODE_VERSION} & PM2...${NC}"
 if ! command -v node &> /dev/null; then
     curl -fsSL https://deb.nodesource.com/setup_${NODE_VERSION}.x | bash -
     apt-get install -y nodejs
@@ -61,42 +61,77 @@ else
 fi
 
 # 5. KLONING REPOSITORY GITHUB
-echo -e "\n${YELLOW}[4/7] Mengambil Source Code dari GitHub...${NC}"
+echo -e "\n${YELLOW}[4/8] Mengambil Source Code dari GitHub...${NC}"
 if [ -d "$APP_DIR" ]; then
     echo -e "${YELLOW}Direktori $APP_DIR sudah ada. Mem-backup direktori lama...${NC}"
     mv "$APP_DIR" "${APP_DIR}_backup_$(date +%s)"
 fi
 
 git clone "$GITHUB_REPO" "$APP_DIR"
+
+if [ ! -d "$APP_DIR" ]; then
+    echo -e "${RED}[!] Gagal melakukan clone repository. Pastikan URL dan akses GitHub Anda benar.${NC}"
+    exit 1
+fi
+
 cd "$APP_DIR" || exit
 
 # 6. INSTALASI MODUL NODE.JS (NPM)
-echo -e "\n${YELLOW}[5/7] Menginstal Node Modules...${NC}"
+echo -e "\n${YELLOW}[5/8] Menginstal Node Modules...${NC}"
 npm install
 
-# Setup file .env jika belum ada
+# 6.5. SETUP FIREBASE SERVICE ACCOUNT (BARU)
+echo -e "\n${YELLOW}[6/8] Membuat file firebase-service-account.json...${NC}"
+cat <<EOF > firebase-service-account.json
+{
+  "type": "service_account",
+  "project_id": "GANTI_DENGAN_PROJECT_ID_ANDA",
+  "private_key_id": "GANTI_DENGAN_PRIVATE_KEY_ID_ANDA",
+  "private_key": "GANTI_DENGAN_PRIVATE_KEY_ANDA",
+  "client_email": "GANTI_DENGAN_CLIENT_EMAIL_ANDA",
+  "client_id": "GANTI_DENGAN_CLIENT_ID_ANDA",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "GANTI_DENGAN_CERT_URL_ANDA",
+  "universe_domain": "googleapis.com"
+}
+EOF
+echo -e "${GREEN}File firebase-service-account.json berhasil dibuat! (PENTING: Anda harus mengedit isinya nanti)${NC}"
+
+# 7. SETUP FILE .ENV
 if [ ! -f ".env" ]; then
-    echo -e "\n${YELLOW}[6/7] Membuat file .env template...${NC}"
+    echo -e "\n${YELLOW}[7/8] Membuat file .env template...${NC}"
     cat <<EOF > .env
 PORT=3008
 ADMIN_NUMBER=628xxxxxxxxx
 SERVER_IP=127.0.0.1
 PROTECTED_DIR=/var/www/html
 BACKUP_DIR=/root/backup_vault
-# Konfigurasi Tambahan
 EOF
-    echo -e "${GREEN}File .env berhasil dibuat. Silakan lengkapi nanti.${NC}"
+    echo -e "${GREEN}File .env berhasil dibuat.${NC}"
 else
-    echo -e "\n${GREEN}[6/7] File .env sudah ada.${NC}"
+    echo -e "\n${GREEN}[7/8] File .env sudah ada.${NC}"
 fi
 
-# 7. MENJALANKAN BACKEND DENGAN PM2
-echo -e "\n${YELLOW}[7/7] Menjalankan Gateway dengan PM2...${NC}"
-# Pastikan port 3008 bersih
+# 8. MENJALANKAN BACKEND DENGAN PM2 (AUTO-DETECT)
+echo -e "\n${YELLOW}[8/8] Mendeteksi Entry Point & Menjalankan Gateway PM2...${NC}"
 fuser -k 3008/tcp 2>/dev/null || true
 
-# Jalankan aplikasi
-pm2 start src/index.js --name "$APP_NAME" --update-env
+# Logika Anti-Error: Cari file index.js di mana pun dia berada
+if [ -f "src/index.js" ]; then
+    echo -e "${CYAN}File utama ditemukan di src/index.js${NC}"
+    pm2 start src/index.js --name "$APP_NAME" --update-env
+elif [ -f "backend/index.js" ]; then
+    echo -e "${CYAN}File utama ditemukan di backend/index.js${NC}"
+    pm2 start backend/index.js --name "$APP_NAME" --update-env
+elif [ -f "index.js" ]; then
+    echo -e "${CYAN}File utama ditemukan di root direktori (index.js)${NC}"
+    pm2 start index.js --name "$APP_NAME" --update-env
+else
+    echo -e "${RED}[!] ERROR FATAL: File index.js tidak ditemukan di dalam repositori! PM2 dibatalkan.${NC}"
+    exit 1
+fi
 
 # Simpan konfigurasi PM2 agar auto-start saat reboot
 pm2 save
@@ -109,6 +144,11 @@ echo -e "🛡️  System developed by: ${CYAN}Tirta Sadewa${NC}"
 echo -e "🚀 Status PM2         : ${CYAN}pm2 status${NC}"
 echo -e "📋 Log Real-time      : ${CYAN}pm2 logs $APP_NAME${NC}"
 echo -e "⚙️  Direktori         : ${CYAN}$APP_DIR${NC}"
+echo -e "==========================================================="
+echo -e "${YELLOW}TINDAKAN WAJIB SETELAH INI:${NC}"
+echo -e "1. Edit kredensial Firebase : ${CYAN}nano $APP_DIR/firebase-service-account.json${NC}"
+echo -e "2. Edit pengaturan .env     : ${CYAN}nano $APP_DIR/.env${NC}"
+echo -e "3. Terapkan perubahan       : ${CYAN}pm2 restart $APP_NAME${NC}"
 echo -e "==========================================================="
 echo -e "${YELLOW}Cyber Sentinel Secure Team © 2026${NC}"
 echo -e "==========================================================="
