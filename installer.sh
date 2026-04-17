@@ -7,8 +7,8 @@
 # ==============================================================================
 
 # --- KONFIGURASI PENGGUNA (EDIT BAGIAN INI) ---
-GITHUB_REPO="https://github.com/username/wa-gateway-cyber.git" # Ganti dengan URL Repo Anda
-APP_DIR="/root/wa-gateway-cyber"
+GITHUB_REPO="https://github.com/tirtasadewa555-eng/CyberX" # Ganti dengan URL Repo Anda
+APP_DIR="/root/CyberX"
 APP_NAME="wa-gateway"
 NODE_VERSION="20"
 # ---------------------------------------------
