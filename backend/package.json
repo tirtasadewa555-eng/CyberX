@@ -1,0 +1,46 @@
+{
+  "name": "wa-gateway-cyber-backend",
+  "version": "1.0.0",
+  "description": "WhatsApp Gateway Backend terintegrasi dengan Firebase Firestore dan Load Balancing Gemini AI untuk kebutuhan operasional Team Cyber.",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js",
+    "reset": "killall node chromium chrome 2>/dev/null; rm -rf .wwebjs_auth && echo '✅ Sesi berhasil dibersihkan! Silakan jalankan npm run dev atau npm start untuk scan QR baru.'",
+    "lint": "eslint .",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "whatsapp",
+    "gateway",
+    "firebase",
+    "gemini-ai",
+    "cyber-security",
+    "automation",
+    "bot"
+  ],
+  "author": "Tirta Sadewa",
+  "license": "MIT",
+  "dependencies": {
+    "@google/generative-ai": "^0.24.1",
+    "body-parser": "^1.20.2",
+    "chokidar": "^5.0.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "firebase-admin": "^12.1.0",
+    "qrcode-terminal": "^0.12.0",
+    "systeminformation": "^5.31.5",
+    "tail": "^2.2.6",
+    "ufw": "^1.0.3",
+    "whatsapp-web.js": "latest",
+    "winston": "^3.19.0",
+    "winston-daily-rotate-file": "^5.0.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.0"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  }
+}

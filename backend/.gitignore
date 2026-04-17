@@ -1,0 +1,20 @@
+# Dependency directories
+node_modules/
+
+# Environment variables
+.env
+
+# Firebase credentials (SANGAT RAHASIA)
+firebase-service-account.json
+
+# WhatsApp Auth Session (SANGAT RAHASIA)
+.wwebjs_auth/
+
+# Log files
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS metadata
+.DS_Store
+Thumbs.db
