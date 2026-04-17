@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # ==============================================================================
-# CYBER-X GATEWAY - AUTO DEPLOYMENT SCRIPT (ANTI-ERROR EDITION)
+# CYBER-X GATEWAY - AUTO DEPLOYMENT SCRIPT (ANTI-ERROR EDITION v2)
 # Created by: Tirta Sadewa | Cyber Security Expert
 # Team: Cyber Sentinel Secure Team
 # ==============================================================================
@@ -9,9 +9,9 @@
 # --- KONFIGURASI PENGGUNA (EDIT BAGIAN INI) ---
 GITHUB_REPO="https://github.com/tirtasadewa555-eng/CyberX.git" 
 APP_NAME="CyberX"
-# PERBAIKAN KRUSIAL: Jangan gunakan "/root/", gunakan nama spesifik untuk folder aplikasi
 APP_DIR="/root/$APP_NAME" 
 NODE_VERSION="20"
+APP_PORT="3008" # Port yang digunakan oleh Gateway
 # ---------------------------------------------
 
 # Warna untuk output Terminal
@@ -36,16 +36,16 @@ if [ "$EUID" -ne 0 ]; then
 fi
 
 # 2. UPDATE & UPGRADE OS
-echo -e "\n${YELLOW}[1/8] Memperbarui sistem Ubuntu & Daftar Paket...${NC}"
+echo -e "\n${YELLOW}[1/9] Memperbarui sistem Ubuntu & Daftar Paket...${NC}"
 apt-get update && apt-get upgrade -y
 
 # 3. INSTALASI DEPENDENSI SISTEM & PUPPETEER
-echo -e "\n${YELLOW}[2/8] Menginstal Dependensi Sistem, Keamanan & Puppeteer...${NC}"
+echo -e "\n${YELLOW}[2/9] Menginstal Dependensi Sistem, Keamanan & Puppeteer...${NC}"
 apt-get install -y curl git unzip build-essential psmisc lsof ufw nmap clamav
 apt-get install -y libnss3 libxss1 libasound2 libatk-bridge2.0-0 libgtk-3-0 libgbm1 libnss3-dev libgdk-pixbuf2.0-0 libffi-dev libappindicator3-1 fonts-liberation xdg-utils
 
 # 4. INSTALASI NODE.JS & PM2
-echo -e "\n${YELLOW}[3/8] Menginstal Node.js v${NODE_VERSION} & PM2...${NC}"
+echo -e "\n${YELLOW}[3/9] Menginstal Node.js v${NODE_VERSION} & PM2...${NC}"
 if ! command -v node &> /dev/null; then
     curl -fsSL https://deb.nodesource.com/setup_${NODE_VERSION}.x | bash -
     apt-get install -y nodejs
@@ -61,7 +61,7 @@ else
 fi
 
 # 5. KLONING REPOSITORY GITHUB
-echo -e "\n${YELLOW}[4/8] Mengambil Source Code dari GitHub...${NC}"
+echo -e "\n${YELLOW}[4/9] Mengambil Source Code dari GitHub...${NC}"
 if [ -d "$APP_DIR" ]; then
     echo -e "${YELLOW}Direktori $APP_DIR sudah ada. Mem-backup direktori lama...${NC}"
     mv "$APP_DIR" "${APP_DIR}_backup_$(date +%s)"
@@ -77,11 +77,11 @@ fi
 cd "$APP_DIR" || exit
 
 # 6. INSTALASI MODUL NODE.JS (NPM)
-echo -e "\n${YELLOW}[5/8] Menginstal Node Modules...${NC}"
+echo -e "\n${YELLOW}[5/9] Menginstal Node Modules...${NC}"
 npm install
 
-# 6.5. SETUP FIREBASE SERVICE ACCOUNT (BARU)
-echo -e "\n${YELLOW}[6/8] Membuat file firebase-service-account.json...${NC}"
+# 7. SETUP FIREBASE SERVICE ACCOUNT
+echo -e "\n${YELLOW}[6/9] Membuat file firebase-service-account.json...${NC}"
 cat <<EOF > firebase-service-account.json
 {
   "type": "service_account",
@@ -97,13 +97,13 @@ cat <<EOF > firebase-service-account.json
   "universe_domain": "googleapis.com"
 }
 EOF
-echo -e "${GREEN}File firebase-service-account.json berhasil dibuat! (PENTING: Anda harus mengedit isinya nanti)${NC}"
+echo -e "${GREEN}File firebase-service-account.json berhasil dibuat!${NC}"
 
-# 7. SETUP FILE .ENV
+# 8. SETUP FILE .ENV
 if [ ! -f ".env" ]; then
-    echo -e "\n${YELLOW}[7/8] Membuat file .env template...${NC}"
+    echo -e "\n${YELLOW}[7/9] Membuat file .env template...${NC}"
     cat <<EOF > .env
-PORT=3008
+PORT=${APP_PORT}
 ADMIN_NUMBER=628xxxxxxxxx
 SERVER_IP=127.0.0.1
 PROTECTED_DIR=/var/www/html
@@ -111,14 +111,33 @@ BACKUP_DIR=/root/backup_vault
 EOF
     echo -e "${GREEN}File .env berhasil dibuat.${NC}"
 else
-    echo -e "\n${GREEN}[7/8] File .env sudah ada.${NC}"
+    echo -e "\n${GREEN}[7/9] File .env sudah ada.${NC}"
 fi
 
-# 8. MENJALANKAN BACKEND DENGAN PM2 (AUTO-DETECT)
-echo -e "\n${YELLOW}[8/8] Mendeteksi Entry Point & Menjalankan Gateway PM2...${NC}"
-fuser -k 3008/tcp 2>/dev/null || true
+# 9. PEMBERSIHAN PM2 & PORT (ANTI-ERROR LOGIC)
+echo -e "\n${YELLOW}[8/9] Membersihkan Port & Proses PM2 yang bentrok...${NC}"
 
-# Logika Anti-Error: Cari file index.js di mana pun dia berada
+# Mematikan proses apa pun yang memakai port yang sama
+if lsof -Pi :$APP_PORT -sTCP:LISTEN -t >/dev/null ; then
+    echo -e "${RED}[!] Port $APP_PORT sedang digunakan. Melakukan Kill Process...${NC}"
+    kill -9 $(lsof -t -i:$APP_PORT) 2>/dev/null || true
+    fuser -k $APP_PORT/tcp 2>/dev/null || true
+    sleep 2
+else
+    echo -e "${GREEN}Port $APP_PORT dalam keadaan bersih.${NC}"
+fi
+
+# Menghapus profil PM2 dengan nama yang sama jika ada
+if pm2 describe "$APP_NAME" > /dev/null 2>&1; then
+    echo -e "${RED}[!] Menemukan proses PM2 lama bernama '$APP_NAME'. Menghapus profil lama...${NC}"
+    pm2 delete "$APP_NAME"
+    sleep 2
+fi
+
+# 10. MENJALANKAN BACKEND DENGAN PM2 (AUTO-DETECT)
+echo -e "\n${YELLOW}[9/9] Mendeteksi Entry Point & Menjalankan Gateway PM2...${NC}"
+
+# Cari file index.js di mana pun dia berada
 if [ -f "src/index.js" ]; then
     echo -e "${CYAN}File utama ditemukan di src/index.js${NC}"
     pm2 start src/index.js --name "$APP_NAME" --update-env
