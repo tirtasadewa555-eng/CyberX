@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # ==============================================================================
-# CYBER-X GATEWAY - AUTO DEPLOYMENT SCRIPT (ULTRA-STABLE v3)
+# CYBER-X GATEWAY - AUTO DEPLOYMENT SCRIPT (ULTRA-STABLE v4)
 # Created by: Tirta Sadewa | Cyber Security Expert
 # Team: Cyber Sentinel Secure Team
 # ==============================================================================
@@ -61,15 +61,23 @@ if [ -d "$APP_DIR" ]; then
     mv "$APP_DIR" "${APP_DIR}_bak_$(date +%s)"
 fi
 git clone "$GITHUB_REPO" "$APP_DIR"
+
+if [ ! -d "$APP_DIR" ]; then
+    echo -e "${RED}[!] Gagal melakukan clone repository. Pastikan URL GitHub Anda benar.${NC}"
+    exit 1
+fi
 cd "$APP_DIR" || exit
 
 # 6. SMART DIRECTORY LOCATOR
-echo -e "\n${YELLOW}[5/9] Mencari Lokasi Source Code (Backend/Src/Root)...${NC}"
-if [ -d "backend" ]; then
+echo -e "\n${YELLOW}[5/9] Mencari Lokasi package.json (Backend/Src/Root)...${NC}"
+if [ -f "backend/package.json" ]; then
     WORKING_DIR="$APP_DIR/backend"
-elif [ -d "src" ]; then
+elif [ -f "src/package.json" ]; then
     WORKING_DIR="$APP_DIR/src"
+elif [ -f "package.json" ]; then
+    WORKING_DIR="$APP_DIR"
 else
+    echo -e "${RED}[!] package.json tidak ditemukan! Asumsi berada di root direktori.${NC}"
     WORKING_DIR="$APP_DIR"
 fi
 cd "$WORKING_DIR" || exit
@@ -93,7 +101,7 @@ cat <<EOF > firebase-service-account.json
 }
 EOF
 
-# File .env (Pastikan PORT didefinisikan di sini agar tidak lari ke 3000)
+# File .env (Pastikan PORT didefinisikan agar tidak memakai port 3000)
 cat <<EOF > .env
 PORT=$TARGET_PORT
 ADMIN_NUMBER=628xxxxxxxxx
@@ -107,12 +115,17 @@ echo -e "${GREEN}Config .env & Firebase berhasil dibuat di $WORKING_DIR${NC}"
 echo -e "\n${YELLOW}[8/9] Reset Profil PM2...${NC}"
 pm2 delete "$APP_NAME" 2>/dev/null || true
 
-# 10. LAUNCH SYSTEM
+# 10. LAUNCH SYSTEM (Presisi Tinggi)
 echo -e "\n${YELLOW}[9/9] Menjalankan Cyber-X Gateway...${NC}"
-if [ -f "index.js" ]; then
+# Cek lokasi index.js secara spesifik
+if [ -f "src/index.js" ]; then
+    echo -e "${CYAN}File utama ditemukan di src/index.js${NC}"
+    pm2 start src/index.js --name "$APP_NAME" --update-env
+elif [ -f "index.js" ]; then
+    echo -e "${CYAN}File utama ditemukan di index.js${NC}"
     pm2 start index.js --name "$APP_NAME" --update-env
 else
-    echo -e "${RED}[!] File index.js tidak ditemukan di $WORKING_DIR${NC}"
+    echo -e "${RED}[!] ERROR FATAL: File index.js tidak ditemukan di dalam $WORKING_DIR maupun $WORKING_DIR/src${NC}"
     exit 1
 fi
 
@@ -126,5 +139,5 @@ echo -e "🛡️  Developer : ${CYAN}Tirta Sadewa${NC}"
 echo -e "📂 Lokasi    : ${CYAN}$WORKING_DIR${NC}"
 echo -e "🌐 Port      : ${CYAN}$TARGET_PORT${NC}"
 echo -e "==========================================================="
-echo -e "${YELLOW}Ketik 'pm2 logs $APP_NAME' untuk scan QR Code.${NC}"
+echo -e "${YELLOW}Ketik 'pm2 logs $APP_NAME --raw' untuk scan QR Code.${NC}"
 echo -e "==========================================================="
