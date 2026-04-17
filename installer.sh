@@ -76,8 +76,20 @@ fi
 
 cd "$APP_DIR" || exit
 
-# 6. INSTALASI MODUL NODE.JS (NPM)
-echo -e "\n${YELLOW}[5/9] Menginstal Node Modules...${NC}"
+# 6. INSTALASI MODUL NODE.JS (CLEAN INSTALL)
+echo -e "\n${YELLOW}[5/9] Membersihkan Cache & Menginstal Node Modules (Clean Install)...${NC}"
+
+if [ -d "node_modules" ]; then
+    echo -e "${CYAN}Mendeteksi node_modules lama. Menghapus...${NC}"
+    rm -rf node_modules
+fi
+
+if [ -f "package-lock.json" ]; then
+    echo -e "${CYAN}Mendeteksi package-lock.json lama. Menghapus...${NC}"
+    rm -f package-lock.json
+fi
+
+echo -e "${GREEN}Menjalankan instalasi NPM bersih...${NC}"
 npm install
 
 # 7. SETUP FIREBASE SERVICE ACCOUNT
