@@ -42,3 +42,5 @@ ADMIN_NUMBER=6281234567890   # Ganti dengan nomor WhatsApp pribadi Anda (tanpa +
 SERVER_IP=127.0.0.1          # IP Server/VPS Anda
 PROTECTED_DIR=/var/www/html  # Direktori yang ingin dipantau/dilindungi
 BACKUP_DIR=/root/backup_vault
+# Konfigurasi Gemini (Pisahkan dengan koma jika ada banyak untuk Load Balancing)
+GEMINI_API_KEYS=Key1,Key2,Key3
