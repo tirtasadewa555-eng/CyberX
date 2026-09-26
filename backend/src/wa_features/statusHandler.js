@@ -3,41 +3,27 @@ const logger = require('../utils/logger');
 
 const handleStatusCheck = async (msg, senderNumber) => {
     try {
-        // Asumsi nama collection tempat Anda menyimpan laporan adalah 'reports'
-        const reportsRef = db.collection('reports');
-        
-        // Mengambil maksimal 3 laporan terakhir dari nomor tersebut
-        const snapshot = await reportsRef
-            .where('sender', '==', senderNumber)
-            // HAPUS SEMENTARA baris orderBy di bawah jika error Index muncul di terminal
-            .orderBy('timestamp', 'desc') 
+        const snapshot = await db.collection('cyber_reports')
+            .where('reporter', '==', senderNumber)
+            .orderBy('timestamp', 'desc')
             .limit(3)
             .get();
 
         if (snapshot.empty) {
-            logger.info(`[CMD-CEK] Laporan kosong untuk nomor ${senderNumber}`);
-            return msg.reply('Anda belum memiliki riwayat laporan, atau laporan sudah ditutup.');
+            return msg.reply('Belum ada riwayat laporan.');
         }
 
-        let replyMessage = '*[📋 Status Laporan Anda]*\n\n';
-        
+        const entries = [];
         snapshot.forEach(doc => {
             const data = doc.data();
             const date = data.timestamp ? data.timestamp.toDate().toLocaleString('id-ID') : 'Waktu tidak diketahui';
-            const status = data.status || '🔴 Pending (Belum diproses)';
-            
-            replyMessage += `*Tgl:* ${date}\n*Laporan:* ${data.content}\n*Status:* ${status}\n\n`;
+            entries.push(`*Tgl:* ${date}\n*Laporan:* ${data.content}\n*Status:* ${data.status || 'pending'}`);
         });
-
-        await msg.reply(replyMessage);
-        logger.info(`[CMD-CEK] Berhasil mengirim status ke ${senderNumber}`);
-
+        await msg.reply(`*[Status Laporan]*\n\n${entries.join('\n\n')}`);
+        logger.info(`[REPORT] Status laporan dikirim untuk ${senderNumber}.`);
     } catch (error) {
-        // Ini akan mencatat error ASLINYA ke dalam file log dan terminal
-        console.error('\n[Error Status Handler]:', error);
-        logger.error(`[STATUS-ERROR] Gagal ambil data untuk ${senderNumber}: ${error.message}`);
-        
-        msg.reply('Terjadi kesalahan sistem saat mengambil data dari database.');
+        logger.error(`[STATUS] Gagal mengambil laporan: ${error.message}`);
+        await msg.reply('Terjadi kesalahan saat mengambil laporan.');
     }
 };
 
