@@ -1,15 +1,11 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const bodyParser = require('body-parser');
 const qrcode = require('qrcode-terminal');
 const { Client, LocalAuth } = require('whatsapp-web.js');
 
-// --- IMPORT CORE UTILS & MIDDLEWARE ---
 const logger = require('./utils/logger');
-const wafMiddleware = require('./wa_features/wafMiddleware'); // [PERISAI WAF NODEJS]
-
-// --- IMPORT FITUR WHATSAPP & SECURITY ---
+const wafMiddleware = require('./wa_features/wafMiddleware');
 const apiRoutes = require('./routes/apiRoutes');
 const { handleAIPrompt } = require('./wa_features/aiHandler');
 const { handleReport } = require('./wa_features/reportHandler');
@@ -17,171 +13,158 @@ const { handleStatusCheck } = require('./wa_features/statusHandler');
 const { handleSystemInfo } = require('./wa_features/systemHandler');
 const { handleNetworkScan } = require('./wa_features/scanHandler');
 const { handleBanIP, handleRecap } = require('./wa_features/firewallHandler');
-const { handleVirtualPatch, deployHoneyToken } = require('./wa_features/virtualPatch'); 
-const { startIPS } = require('./wa_features/logWatcher'); 
-const { startFIM, handleMaintenance, requestMaintenance, verifyMaintenanceOTP } = require('./wa_features/autoRestore'); // [UPDATE - TAMBAH 2FA OTP]
-const { handleHoneyTokenTrigger } = require('./wa_features/honeyToken'); 
+const { handleVirtualPatch, deployHoneyToken } = require('./wa_features/virtualPatch');
+const { startIPS } = require('./wa_features/logWatcher');
+const { startFIM, handleMaintenance, requestMaintenance, verifyMaintenanceOTP } = require('./wa_features/autoRestore');
+const { handleHoneyTokenTrigger } = require('./wa_features/honeyToken');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = Number(process.env.PORT || 3000);
+const ADMIN_NUMBER = (process.env.ADMIN_NUMBER || '').replace(/\D/g, '');
+const ADMIN_CHAT_ID = ADMIN_NUMBER ? `${ADMIN_NUMBER}@c.us` : null;
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || '')
+    .split(',')
+    .map(origin => origin.trim())
+    .filter(Boolean);
 
-// --- MIDDLEWARE LAYER ---
-app.use(cors());
-app.use(bodyParser.json());
-app.use(bodyParser.urlencoded({ extended: true }));
+if (!ADMIN_CHAT_ID) {
+    logger.error('[CONFIG] ADMIN_NUMBER wajib diisi. Semua perintah WhatsApp akan ditolak.');
+}
 
-// AKTIFKAN WAF INTERNAL (Mencegah serangan langsung ke API Node.js)
-app.use(wafMiddleware); 
+app.disable('x-powered-by');
+if (process.env.TRUST_PROXY === 'true') app.set('trust proxy', 1);
+app.use(cors({
+    origin(origin, callback) {
+        if (!origin || ALLOWED_ORIGINS.includes(origin)) return callback(null, true);
+        return callback(new Error('Origin tidak diizinkan oleh CORS.'));
+    },
+    methods: ['GET', 'POST'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    maxAge: 600
+}));
+app.use(express.json({ limit: '16kb' }));
+app.use(express.urlencoded({ extended: false, limit: '16kb' }));
+app.use(wafMiddleware);
 
-// --- KONFIGURASI PUPPETEER HANDAL ---
 const client = new Client({
-    authStrategy: new LocalAuth({ clientId: "cyber-gateway-session" }),
-    puppeteer: { 
+    authStrategy: new LocalAuth({ clientId: 'cyber-gateway-session' }),
+    puppeteer: {
         headless: true,
-        handleSIGINT: false, 
+        handleSIGINT: false,
         args: [
-            '--no-sandbox', 
-            '--disable-setuid-sandbox', 
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
             '--disable-dev-shm-usage',
             '--disable-accelerated-2d-canvas',
             '--no-first-run',
             '--no-zygote',
             '--disable-gpu',
-            '--js-flags="--max-old-space-size=512"' 
+            '--js-flags="--max-old-space-size=512"'
         ]
     }
 });
 
-// --- EVENT WHATSAPP ---
+const isAuthorizedAdminMessage = msg => Boolean(
+    ADMIN_CHAT_ID && !msg.from.endsWith('@g.us') && msg.from === ADMIN_CHAT_ID
+);
 
-client.on('qr', (qr) => {
+client.on('qr', qr => {
     console.log('\n[!] AUTHENTICATION REQUIRED. SCAN QR CODE DI BAWAH:');
     qrcode.generate(qr, { small: true });
 });
 
 client.on('ready', () => {
-    const msg = 'Cyber-X Gateway is ONLINE! Sistem pertahanan berlapis diaktifkan.';
-    console.log(`\n[+] ${msg}`);
-    logger.info(msg); 
-
-    // Jalankan Intrusion Prevention System (Pantau Log SSH/Web)
+    const message = 'Cyber-X Gateway is ONLINE! Sistem pertahanan berlapis diaktifkan.';
+    console.log(`\n[+] ${message}`);
+    logger.info(message);
     startIPS(client);
-
-    // Jalankan File Integrity Monitoring (Pantau Modifikasi File)
-    startFIM(client); 
+    startFIM(client);
 });
 
-client.on('auth_failure', msg => {
-    const errMsg = 'AUTH FAILURE: Sesi tidak valid atau kadaluarsa.';
-    console.error(`\n[!] ${errMsg}`);
-    logger.error(`${errMsg} | Detail: ${msg}`);
+client.on('auth_failure', message => {
+    logger.error(`AUTH FAILURE: Sesi tidak valid atau kadaluarsa. Detail: ${message}`);
 });
 
-// Fitur Self-Healing: Paksa keluar agar PM2 restart bersih jika disconnect
-client.on('disconnected', async (reason) => {
-    const warnMsg = `WARNING: WhatsApp Client Terputus! Alasan: ${reason}`;
-    logger.warn(warnMsg);
-    console.log(`\n[!] ${warnMsg}`);
-    process.exit(1); 
+client.on('disconnected', reason => {
+    logger.warn(`WARNING: WhatsApp Client Terputus! Alasan: ${reason}`);
+    process.exit(1);
 });
 
-// --- ROUTING PESAN MASUK ---
 client.on('message', async msg => {
-    const senderNumber = msg.from.replace('@c.us', '');
     const text = msg.body ? msg.body.trim() : '';
+    if (!text || !text.startsWith('!')) return;
 
-    if (!text) return;
+    if (!isAuthorizedAdminMessage(msg)) {
+        logger.warn(`[AUTH] Perintah WhatsApp ditolak dari ${msg.from}`);
+        await msg.reply('⛔ Perintah ini hanya dapat digunakan oleh administrator melalui chat pribadi.');
+        return;
+    }
 
-    logger.info(`[INBOX] Dari ${senderNumber}: ${text}`);
+    const senderNumber = ADMIN_NUMBER;
+    logger.info(`[INBOX] Perintah diterima dari administrator: ${text.split(/\s+/)[0]}`);
 
     try {
         if (text === '!menu' || text === '!help') {
-            const menu = `
-*🤖 CYBER-X GATEWAY MENU*
-_Status: Shield Active | Port: ${PORT}_
-
-📝 *OPERASIONAL:*
-• \`!ai <tanya>\` : Konsultasi Tech & OSINT.
-• \`!lapor <info>\` : Simpan log ke Database.
-• \`!cekstatus\` : Lihat riwayat laporan.
-
-🛡️ *SECURITY & FIREWALL:*
-• \`!vpatch <nginx/apache/nodejs>\` : Tanam Perisai WAF.
-• \`!token\` : Tanam Ranjau.
-• \`!scan <target>\` : Audit Port (Nmap).
-• \`!ban <IP>\` : Blacklist IP Manual.
-• \`!rekap\` : Lihat Daftar Blacklist.
-• \`!mt on/off\` : Mode Perawatan.
-
-📊 *MONITORING:*
-• \`!sysinfo\` : Cek Resource Server.
-• \`!ping\` : Tes koneksi sistem.
-
-_Gunakan perintah dengan prefix (!) untuk merespons._
-
-© Copyright Cyber Sentinel Secure Team`.trim();
-            await msg.reply(menu);
-        }
-        else if (text.startsWith('!ai ')) {
+            await msg.reply([
+                '*CYBER-X GATEWAY MENU*',
+                '',
+                '*OPERASIONAL:*',
+                '• `!ai <tanya>`',
+                '• `!lapor <info>`',
+                '• `!cekstatus`',
+                '',
+                '*SECURITY & FIREWALL:*',
+                '• `!vpatch <nginx/apache/nodejs>`',
+                '• `!token`',
+                '• `!scan <target>`',
+                '• `!ban <IP>`',
+                '• `!rekap`',
+                '• `!mt on/off`',
+                '',
+                '*MONITORING:*',
+                '• `!sysinfo`',
+                '• `!ping`'
+            ].join('\n'));
+        } else if (text.startsWith('!ai ')) {
             await handleAIPrompt(msg, senderNumber, text.substring(4));
-        } 
-        else if (text.startsWith('!lapor ')) {
+        } else if (text.startsWith('!lapor ')) {
             await handleReport(msg, senderNumber, text.substring(7));
-        }
-        else if (text === '!cekstatus') {
+        } else if (text === '!cekstatus') {
             await handleStatusCheck(msg, senderNumber);
-        }
-        else if (text === '!sysinfo') {
+        } else if (text === '!sysinfo') {
             await handleSystemInfo(msg);
-        }
-        else if (text.startsWith('!scan ')) {
+        } else if (text.startsWith('!scan ')) {
             await handleNetworkScan(msg, text.substring(6).trim());
-        }
-        else if (text.startsWith('!ban ')) { 
-            const ip = text.substring(5).trim();
-            await handleBanIP(msg, ip);
-        }
-        else if (text === '!rekap') { 
+        } else if (text.startsWith('!ban ')) {
+            await handleBanIP(msg, text.substring(5).trim());
+        } else if (text === '!rekap') {
             await handleRecap(msg);
-        }
-        else if (text.startsWith('!vpatch ')) { 
-            const type = text.substring(8).trim().toLowerCase();
-            await handleVirtualPatch(msg, type);
-        }
-        else if (text === '!token') { 
+        } else if (text.startsWith('!vpatch ')) {
+            await handleVirtualPatch(msg, text.substring(8).trim().toLowerCase());
+        } else if (text === '!token') {
             await deployHoneyToken(msg);
-        }
-        else if (text === '!mt on') { 
-            // Mengalihkan perintah untuk meminta OTP 2FA terlebih dahulu
+        } else if (text === '!mt on') {
             await requestMaintenance(msg);
-        }
-        else if (text.startsWith('!otp ')) { 
-            // Memverifikasi kode OTP yang dimasukkan
-            const userOtp = text.substring(5).trim();
-            await verifyMaintenanceOTP(msg, userOtp);
-        }
-        else if (text === '!mt off') { 
-            // Matikan maintenance (menyalakan pertahanan) tidak butuh OTP
+        } else if (text.startsWith('!otp ')) {
+            await verifyMaintenanceOTP(msg, text.substring(5).trim());
+        } else if (text === '!mt off') {
             await handleMaintenance(msg, false);
+        } else if (text === '!ping') {
+            await msg.reply('Pong. Gateway aktif dan responsif.');
         }
-        else if (text === '!ping') {
-            await msg.reply('🏓 *Pong!* Gateway aktif dan responsif.');
-        }
-    } catch (err) {
-        logger.error(`Error processing message: ${err.message}`);
-        if (err.message.includes('Execution context was destroyed')) process.exit(1);
+    } catch (error) {
+        logger.error(`Error processing WhatsApp command: ${error.message}`);
+        if (error.message.includes('Execution context was destroyed')) process.exit(1);
+        await msg.reply('Terjadi kesalahan saat memproses perintah.');
     }
 });
 
-// --- ANTI-ZOMBIE & ERROR HANDLING ---
-
-const cleanShutdown = async (signal) => {
+const cleanShutdown = async signal => {
     logger.info(`[SYSTEM] Sinyal ${signal}. Mematikan semua engine secara aman...`);
     try {
         await client.destroy();
-        console.log('[+] Client hancur.');
-    } catch (err) {
-        console.error('[!] Gagal shutdown bersih:', err.message);
+    } catch (error) {
+        logger.error(`[SYSTEM] Gagal shutdown bersih: ${error.message}`);
     } finally {
         process.exit(0);
     }
@@ -189,37 +172,34 @@ const cleanShutdown = async (signal) => {
 
 process.on('SIGINT', () => cleanShutdown('SIGINT'));
 process.on('SIGTERM', () => cleanShutdown('SIGTERM'));
-
-process.on('unhandledRejection', (reason) => {
+process.on('unhandledRejection', reason => {
     logger.error(`[FATAL] Unhandled Rejection: ${reason}`);
-    if (reason.toString().includes('Execution context was destroyed') || 
-        reason.toString().includes('already running')) {
+    if (String(reason).includes('Execution context was destroyed') || String(reason).includes('already running')) {
         process.exit(1);
     }
 });
 
-// INISIALISASI WHATSAPP
-client.initialize().catch(err => {
-    logger.error(`[FATAL] Gagal Start Client: ${err.message}`);
+client.initialize().catch(error => {
+    logger.error(`[FATAL] Gagal Start Client: ${error.message}`);
     process.exit(1);
 });
 
-// ==========================================
-// --- WEB SERVER & API ROUTES LAYER ---
-// ==========================================
-
-// --- 🍯 HONEY-TOKEN TRACKER ENDPOINT ---
 app.get('/assets/css/theme-dark-cache.css', async (req, res) => {
-    handleHoneyTokenTrigger(client, req);
-    res.set('Content-Type', 'text/css');
-    res.send('/* Theme Cache Initialized - CyberX */');
+    await handleHoneyTokenTrigger(client, req);
+    res.type('text/css').send('/* Theme Cache Initialized - CyberX */');
 });
 
-// --- REST API ROUTES ---
 app.use('/api', apiRoutes(client));
 
+app.use((error, req, res, next) => {
+    if (error.message === 'Origin tidak diizinkan oleh CORS.') {
+        logger.warn(`[CORS] Origin ditolak: ${req.headers.origin || 'unknown'}`);
+        return res.status(403).json({ status: 'error', message: 'Origin tidak diizinkan.' });
+    }
+    logger.error(`[HTTP] ${error.message}`);
+    return res.status(400).json({ status: 'error', message: 'Request tidak valid.' });
+});
+
 app.listen(PORT, () => {
-    const startMsg = `Gateway API & WAF Engine running on port ${PORT}`;
-    console.log(`\n[+] ${startMsg}`);
-    logger.info(startMsg);
+    logger.info(`Gateway API & WAF Engine running on port ${PORT}`);
 });

@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+
+# Secrets and deployment configuration
+.env
+.env.*
+!.env.example
+firebase-service-account.json
+*.pem
+*.key
+
+# WhatsApp session data
+.wwebjs_auth/
+.wwebjs_cache/
+
+# Logs and runtime files
+logs/
+*.log
+pids/
+*.pid
+
+# OS and editor files
+.DS_Store
+.vscode/
+.idea/
